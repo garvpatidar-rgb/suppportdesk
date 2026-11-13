@@ -1,0 +1,26 @@
+# Binaries and compiled files
+/backend/server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment variables & secrets (NEVER PUSH)
+.env
+.env.local
+.env.*.local
+
+# Node modules & build artifacts
+node_modules/
+/frontend/dist/
+/frontend/node_modules/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+.neon
+.neon

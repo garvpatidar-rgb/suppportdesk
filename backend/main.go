@@ -2,25 +2,34 @@ package main
 
 import (
 	"log"
-	"os"
 
-	"supportdesk/backend/internal/database"
-	"supportdesk/backend/internal/routes"
+	"supportdesk/backend/config"
+	"supportdesk/backend/database"
+	"supportdesk/backend/routes"
+	"supportdesk/backend/utils"
 )
 
 func main() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		log.Fatal("DATABASE_URL must be set")
+	// Load configuration from environment variables.
+	cfg := config.Load()
+
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL environment variable must be set")
 	}
 
-	db, err := database.Connect(dsn)
+	// Initialise the JWT signing key.
+	utils.SetJWTSecret(cfg.JWTSecret)
+
+	// Connect to PostgreSQL and run migrations.
+	db, err := database.Connect(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Build the Gin router and start listening.
 	router := routes.Setup(db)
-	if err := router.Run(":8080"); err != nil {
+	log.Printf("SupportDesk API starting on port %s", cfg.Port)
+	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
 }
