@@ -12,7 +12,6 @@ import (
 
 // Connect opens a PostgreSQL connection and auto-migrates all models.
 func Connect(dsn string) (*gorm.DB, error) {
-	// Silence verbose GORM SQL logging (only log actual errors)
 	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Error),
 	}
@@ -22,7 +21,13 @@ func Connect(dsn string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 
-	if err := db.AutoMigrate(&models.User{}, &models.Ticket{}); err != nil {
+	// AutoMigrate all core and advanced tables
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Ticket{},
+		&models.Comment{},
+		&models.TicketHistory{},
+	); err != nil {
 		return nil, fmt.Errorf("migrate database tables: %w", err)
 	}
 

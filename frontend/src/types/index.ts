@@ -3,6 +3,29 @@ export interface User {
   name: string;
   email: string;
   role: 'customer' | 'agent' | 'admin';
+  skills?: string;
+  max_capacity?: number;
+  is_available?: boolean;
+  created_at: string;
+}
+
+export interface Comment {
+  id: number;
+  ticket_id: number;
+  author_id: number;
+  author?: User;
+  body: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
+export interface TicketHistory {
+  id: number;
+  ticket_id: number;
+  user_id: number;
+  user?: User;
+  action: string;
+  details: string;
   created_at: string;
 }
 

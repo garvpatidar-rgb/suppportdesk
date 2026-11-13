@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -9,18 +10,21 @@ import (
 	"gorm.io/gorm"
 
 	"supportdesk/backend/models"
+	"supportdesk/backend/services"
 )
 
-// TicketController handles HTTP requests for ticket endpoints.
-// This still accesses the DB directly; we will refactor it to use
-// a service + repository layer in Phase 3.
+// TicketController handles HTTP requests for tickets, comments, and audit history.
 type TicketController struct {
-	db *gorm.DB
+	db                *gorm.DB
+	assignmentService *services.AssignmentService
 }
 
-// NewTicketController returns a new TicketController backed by the given DB.
-func NewTicketController(db *gorm.DB) *TicketController {
-	return &TicketController{db: db}
+// NewTicketController returns a new TicketController.
+func NewTicketController(db *gorm.DB, assignmentService *services.AssignmentService) *TicketController {
+	return &TicketController{
+		db:                db,
+		assignmentService: assignmentService,
+	}
 }
 
 type createTicketRequest struct {
@@ -30,18 +34,16 @@ type createTicketRequest struct {
 	Priority    string `json:"priority"`
 }
 
+type createCommentRequest struct {
+	Body       string `json:"body" binding:"required"`
+	IsInternal bool   `json:"is_internal"`
+}
+
 type updateTicketStatusRequest struct {
 	Status string `json:"status" binding:"required"`
 }
 
-type updateTicketRequest struct {
-	Subject     *string `json:"subject"`
-	Description *string `json:"description"`
-	Category    *string `json:"category"`
-	Priority    *string `json:"priority"`
-}
-
-// Create handles POST /api/v1/tickets.
+// Create handles POST /api/v1/tickets with Intelligent Auto-Assignment & Audit Log
 func (ctrl *TicketController) Create(c *gin.Context) {
 	var request createTicketRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -54,7 +56,6 @@ func (ctrl *TicketController) Create(c *gin.Context) {
 		priority = "normal"
 	}
 
-	// Get the authenticated user's ID from the JWT context.
 	customerID, _ := c.Get("user_id")
 
 	ticket := models.Ticket{
@@ -65,23 +66,54 @@ func (ctrl *TicketController) Create(c *gin.Context) {
 		Status:      models.TicketStatusOpen,
 		CustomerID:  customerID.(uint),
 	}
-	if err := ctrl.db.Create(&ticket).Error; err != nil {
+
+	// Concurrency-Safe Transaction: Auto-Assign & Log
+	err := ctrl.db.Transaction(func(tx *gorm.DB) error {
+		// Run Auto-Assignment Algorithm
+		assignedAgent, err := ctrl.assignmentService.AssignTicketIntelligently(tx, &ticket)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Create(&ticket).Error; err != nil {
+			return err
+		}
+
+		// Log ticket creation in Audit Trail
+		historyText := "Ticket created by customer."
+		if assignedAgent != nil {
+			historyText = fmt.Sprintf("Ticket created and automatically assigned to agent %s based on skill [%s].", assignedAgent.Name, ticket.Category)
+		} else {
+			historyText = "Ticket created (currently unassigned - awaiting available agent)."
+		}
+
+		return tx.Create(&models.TicketHistory{
+			TicketID: ticket.ID,
+			UserID:   customerID.(uint),
+			Action:   "created",
+			Details:  historyText,
+		}).Error
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create ticket"})
 		return
 	}
+
+	// Preload relations
+	ctrl.db.Preload("Customer").Preload("Agent").First(&ticket, ticket.ID)
 	c.JSON(http.StatusCreated, ticket)
 }
 
-// List handles GET /api/v1/tickets.
+// List handles GET /api/v1/tickets with relations preloaded
 func (ctrl *TicketController) List(c *gin.Context) {
 	var tickets []models.Ticket
 
 	userRole, _ := c.Get("user_role")
 	userID, _ := c.Get("user_id")
 
-	query := ctrl.db.Order("id asc")
+	query := ctrl.db.Preload("Customer").Preload("Agent").Order("id desc")
 
-	// Customers see only their own tickets; agents and admins see all.
 	if userRole.(string) == models.RoleCustomer {
 		query = query.Where("customer_id = ?", userID.(uint))
 	}
@@ -93,71 +125,7 @@ func (ctrl *TicketController) List(c *gin.Context) {
 	c.JSON(http.StatusOK, tickets)
 }
 
-// Search handles GET /api/v1/tickets/search with pagination and filters.
-func (ctrl *TicketController) Search(c *gin.Context) {
-	page, err := parseQueryInt(c, "page", 1, 1_000_000)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer no greater than 1000000"})
-		return
-	}
-	limit, err := parseQueryInt(c, "limit", 20, 100)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer no greater than 100"})
-		return
-	}
-
-	query := ctrl.db.Model(&models.Ticket{})
-
-	// Customers can only search their own tickets.
-	userRole, _ := c.Get("user_role")
-	userID, _ := c.Get("user_id")
-	if userRole.(string) == models.RoleCustomer {
-		query = query.Where("customer_id = ?", userID.(uint))
-	}
-
-	if status := c.Query("status"); status != "" {
-		if !validTicketStatus(status) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "status must be open, in_progress, or resolved"})
-			return
-		}
-		query = query.Where("status = ?", status)
-	}
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
-	}
-	if priority := c.Query("priority"); priority != "" {
-		query = query.Where("priority = ?", priority)
-	}
-	if search := c.Query("q"); search != "" {
-		pattern := "%" + search + "%"
-		query = query.Where("subject ILIKE ? OR description ILIKE ?", pattern, pattern)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count matching tickets"})
-		return
-	}
-
-	tickets := make([]models.Ticket, 0)
-	offset := (page - 1) * limit
-	if err := query.Order("created_at desc").Order("id desc").Limit(limit).Offset(offset).Find(&tickets).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search tickets"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"tickets": tickets,
-		"pagination": gin.H{
-			"page":        page,
-			"limit":       limit,
-			"total":       total,
-			"total_pages": (total + int64(limit) - 1) / int64(limit),
-		},
-	})
-}
-
-// Get handles GET /api/v1/tickets/:id.
+// Get handles GET /api/v1/tickets/:id
 func (ctrl *TicketController) Get(c *gin.Context) {
 	id, ok := parseTicketID(c)
 	if !ok {
@@ -165,7 +133,7 @@ func (ctrl *TicketController) Get(c *gin.Context) {
 	}
 
 	var ticket models.Ticket
-	if err := ctrl.db.First(&ticket, id).Error; err != nil {
+	if err := ctrl.db.Preload("Customer").Preload("Agent").First(&ticket, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
 			return
@@ -174,83 +142,17 @@ func (ctrl *TicketController) Get(c *gin.Context) {
 		return
 	}
 
-	// Customers can only view their own tickets.
 	userRole, _ := c.Get("user_role")
 	userID, _ := c.Get("user_id")
 	if userRole.(string) == models.RoleCustomer && ticket.CustomerID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you do not have permission to view this ticket"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
 
 	c.JSON(http.StatusOK, ticket)
 }
 
-// Update handles PATCH /api/v1/tickets/:id.
-func (ctrl *TicketController) Update(c *gin.Context) {
-	id, ok := parseTicketID(c)
-	if !ok {
-		return
-	}
-
-	var request updateTicketRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request body must be valid JSON"})
-		return
-	}
-
-	updates := make(map[string]interface{})
-	if request.Subject != nil {
-		if *request.Subject == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "subject cannot be empty"})
-			return
-		}
-		updates["subject"] = *request.Subject
-	}
-	if request.Description != nil {
-		if *request.Description == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "description cannot be empty"})
-			return
-		}
-		updates["description"] = *request.Description
-	}
-	if request.Category != nil {
-		if *request.Category == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "category cannot be empty"})
-			return
-		}
-		updates["category"] = *request.Category
-	}
-	if request.Priority != nil {
-		if *request.Priority == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "priority cannot be empty"})
-			return
-		}
-		updates["priority"] = *request.Priority
-	}
-	if len(updates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "provide at least one field to update"})
-		return
-	}
-
-	result := ctrl.db.Model(&models.Ticket{}).Where("id = ?", id).Updates(updates)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update ticket"})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
-		return
-	}
-
-	var ticket models.Ticket
-	if err := ctrl.db.First(&ticket, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get updated ticket"})
-		return
-	}
-	c.JSON(http.StatusOK, ticket)
-}
-
-// UpdateStatus handles PATCH /api/v1/tickets/:id/status.
+// UpdateStatus handles PATCH /api/v1/tickets/:id/status
 func (ctrl *TicketController) UpdateStatus(c *gin.Context) {
 	id, ok := parseTicketID(c)
 	if !ok {
@@ -263,46 +165,124 @@ func (ctrl *TicketController) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	result := ctrl.db.Model(&models.Ticket{}).Where("id = ?", id).Update("status", request.Status)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update ticket status"})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
+	userID, _ := c.Get("user_id")
+
+	var ticket models.Ticket
+	err := ctrl.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&ticket, id).Error; err != nil {
+			return err
+		}
+
+		oldStatus := ticket.Status
+		ticket.Status = request.Status
+		if err := tx.Save(&ticket).Error; err != nil {
+			return err
+		}
+
+		// Log status change in Audit Trail
+		return tx.Create(&models.TicketHistory{
+			TicketID: ticket.ID,
+			UserID:   userID.(uint),
+			Action:   "status_change",
+			Details:  fmt.Sprintf("Status updated from [%s] to [%s]", oldStatus, request.Status),
+		}).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update status"})
 		return
 	}
 
-	var ticket models.Ticket
-	if err := ctrl.db.First(&ticket, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get updated ticket"})
-		return
-	}
+	ctrl.db.Preload("Customer").Preload("Agent").First(&ticket, id)
 	c.JSON(http.StatusOK, ticket)
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// Comments: Add comment or private internal note
+func (ctrl *TicketController) AddComment(c *gin.Context) {
+	ticketID, ok := parseTicketID(c)
+	if !ok {
+		return
+	}
 
+	var req createCommentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "comment body is required"})
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	userRole, _ := c.Get("user_role")
+
+	// Customers cannot create internal private notes
+	if userRole.(string) == models.RoleCustomer {
+		req.IsInternal = false
+	}
+
+	comment := models.Comment{
+		TicketID:   ticketID,
+		AuthorID:   userID.(uint),
+		Body:       req.Body,
+		IsInternal: req.IsInternal,
+	}
+
+	if err := ctrl.db.Create(&comment).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add comment"})
+		return
+	}
+
+	ctrl.db.Preload("Author").First(&comment, comment.ID)
+	c.JSON(http.StatusCreated, comment)
+}
+
+// Comments: List comments for a ticket (filters out internal notes for customers)
+func (ctrl *TicketController) ListComments(c *gin.Context) {
+	ticketID, ok := parseTicketID(c)
+	if !ok {
+		return
+	}
+
+	userRole, _ := c.Get("user_role")
+
+	var comments []models.Comment
+	query := ctrl.db.Preload("Author").Where("ticket_id = ?", ticketID).Order("created_at asc")
+
+	// Filter internal notes if user is a customer
+	if userRole.(string) == models.RoleCustomer {
+		query = query.Where("is_internal = ?", false)
+	}
+
+	if err := query.Find(&comments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list comments"})
+		return
+	}
+
+	c.JSON(http.StatusOK, comments)
+}
+
+// Audit Trail: Get History for a Ticket
+func (ctrl *TicketController) GetHistory(c *gin.Context) {
+	ticketID, ok := parseTicketID(c)
+	if !ok {
+		return
+	}
+
+	var history []models.TicketHistory
+	if err := ctrl.db.Preload("User").Where("ticket_id = ?", ticketID).Order("created_at desc").Find(&history).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not fetch history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, history)
+}
+
+// Helpers
 func parseTicketID(c *gin.Context) (uint, bool) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ticket ID must be a positive integer"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ticket id"})
 		return 0, false
 	}
 	return uint(id), true
-}
-
-func parseQueryInt(c *gin.Context, name string, defaultValue, maxValue int) (int, error) {
-	value := c.Query(name)
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 1 || parsed > maxValue {
-		return 0, strconv.ErrSyntax
-	}
-	return parsed, nil
 }
 
 func validTicketStatus(status string) bool {

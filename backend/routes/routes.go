@@ -31,8 +31,10 @@ func Setup(db *gorm.DB) *gin.Engine {
 	// ── Dependency wiring ────────────────────────────────────────────
 	userRepo := repositories.NewUserRepository(db)
 	authService := services.NewAuthService(userRepo)
+	assignmentService := services.NewAssignmentService(db)
+
 	authCtrl := controllers.NewAuthController(authService)
-	ticketCtrl := controllers.NewTicketController(db)
+	ticketCtrl := controllers.NewTicketController(db, assignmentService)
 
 	// ── Public routes ────────────────────────────────────────────────
 	router.GET("/health", func(c *gin.Context) {
@@ -58,10 +60,13 @@ func Setup(db *gorm.DB) *gin.Engine {
 		{
 			tickets.POST("", ticketCtrl.Create)
 			tickets.GET("", ticketCtrl.List)
-			tickets.GET("/search", ticketCtrl.Search)
 			tickets.GET("/:id", ticketCtrl.Get)
-			tickets.PATCH("/:id", middleware.RoleRequired(models.RoleAgent, models.RoleAdmin), ticketCtrl.Update)
 			tickets.PATCH("/:id/status", middleware.RoleRequired(models.RoleAgent, models.RoleAdmin), ticketCtrl.UpdateStatus)
+
+			// Comments & Audit Trail
+			tickets.POST("/:id/comments", ticketCtrl.AddComment)
+			tickets.GET("/:id/comments", ticketCtrl.ListComments)
+			tickets.GET("/:id/history", ticketCtrl.GetHistory)
 		}
 	}
 
