@@ -10,6 +10,10 @@
 
 > A modern, high-concurrency Helpdesk and Customer Support ticketing platform engineered with a **Go (Golang) REST API backend**, a **React 19 + TypeScript frontend**, and **PostgreSQL**. Designed with enterprise-grade concurrency controls, role-based security, automated agent assignment, and zero-downtime CI/CD pipelines.
 
+📚 **Deep-Dive Documentation:**
+* **[Detailed REST API Specification & cURL Examples](API_DOCUMENTATION.md)**
+* **[System Design, ERD Schema & Concurrency Deep Dive](SYSTEM_DESIGN.md)**
+
 ---
 
 ## 🌟 Key Engineering Highlights (Resume / Portfolio Highlights)
@@ -185,6 +189,19 @@ go test -v ./...
 - [ ] Email / Webhook notifications on ticket resolution
 - [ ] Multi-container Docker Compose & Kubernetes (EKS) manifests
 - [ ] Redis caching layer for SLA / workload metrics
+
+---
+
+## 💼 Resume-Ready Bullet Points (for 2+ YOE Software Engineer Profile)
+
+Copy and paste these bullet points directly into your Resume / LinkedIn under Projects / Experience:
+
+* **Engineered a high-concurrency Helpdesk Platform** using **Go (Gin, GORM)**, **PostgreSQL (Neon)**, and **React 19 (TypeScript)**, capable of handling sub-millisecond API response times with minimal memory footprint.
+* **Architected a concurrency-safe agent assignment engine** utilizing PostgreSQL **row-level locking (`SELECT ... FOR UPDATE`)** inside atomic database transactions, preventing race conditions and overloading during high ticket surges.
+* **Designed fine-grained Role-Based Access Control (RBAC)** middleware securing endpoints across Admin, Agent, and Customer roles with stateless **HMAC-SHA256 JWT** authentication and bcrypt password salting.
+* **Implemented an immutable audit trail system** logging 100% of ticket status transitions and staff-only internal notes for enterprise compliance and traceability.
+* **Created a zero-dependency interactive demo environment** allowing instant evaluation of the complete frontend workflow without local database dependencies.
+* **Built and deployed end-to-end CI/CD pipelines** using **GitHub Actions** for automated linting (`oxlint`), type verification, and continuous production deployment.
 
 ---
 
