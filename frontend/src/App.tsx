@@ -109,6 +109,21 @@ export function App() {
     setSelectedTicket(null);
   }
 
+  async function handleDemoLogin(demoEmail: string) {
+    setError('');
+    setLoading(true);
+    localStorage.setItem('force_demo_mode', 'true');
+    try {
+      const res = await api.login(demoEmail, 'password123');
+      localStorage.setItem('token', res.token);
+      setUser(res.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleCreateTicket(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -222,6 +237,38 @@ export function App() {
               {isLoginMode ? 'Register now' : 'Sign In'}
             </button>
           </div>
+
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '10px', fontWeight: 600 }}>
+              ⚡ 1-Click Instant Demo (No Backend / Credentials Required)
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
+                onClick={() => handleDemoLogin('customer@demo.com')}
+              >
+                👤 Customer
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
+                onClick={() => handleDemoLogin('agent.priya@demo.com')}
+              >
+                🛠️ Agent
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
+                onClick={() => handleDemoLogin('admin@demo.com')}
+              >
+                👑 Admin
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -235,6 +282,11 @@ export function App() {
         <div className="logo">
           <LifeBuoy size={26} />
           SupportDesk
+          {localStorage.getItem('force_demo_mode') === 'true' && (
+            <span style={{ fontSize: '0.7rem', background: '#ecfdf5', color: '#059669', padding: '2px 8px', borderRadius: '12px', marginLeft: '6px', border: '1px solid #a7f3d0' }}>
+              Demo Mode
+            </span>
+          )}
         </div>
         <div className="user-info">
           <div>
