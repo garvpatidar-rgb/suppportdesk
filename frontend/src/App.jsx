@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './services/api';
-import type { User, Ticket, Comment, TicketHistory } from './types';
 import { 
   LifeBuoy, LogOut, Plus, RefreshCw, CheckCircle, 
   Send, Lock, UserCheck, History, MessageSquare, ChevronRight, AlertCircle, ShieldAlert
 } from 'lucide-react';
 
 export function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState(null);
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -16,12 +15,12 @@ export function App() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'customer' | 'agent' | 'admin'>('customer');
+  const [role, setRole] = useState('customer');
   const [skills, setSkills] = useState('Payment,Technical');
 
   // Tickets State
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [tickets, setTickets] = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Create Form State
@@ -31,9 +30,9 @@ export function App() {
   const [priority, setPriority] = useState('normal');
 
   // Drawer / Conversation State
-  const [activeTab, setActiveTab] = useState<'conversation' | 'audit'>('conversation');
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [history, setHistory] = useState<TicketHistory[]>([]);
+  const [activeTab, setActiveTab] = useState('conversation');
+  const [comments, setComments] = useState([]);
+  const [history, setHistory] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [isInternalNote, setIsInternalNote] = useState(false);
 
@@ -61,14 +60,14 @@ export function App() {
         const updated = data.find(t => t.id === selectedTicket.id);
         if (updated) setSelectedTicket(updated);
       }
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
 
-  async function openTicketDetail(ticket: Ticket) {
+  async function openTicketDetail(ticket) {
     setSelectedTicket(ticket);
     try {
       const [cmtData, histData] = await Promise.all([
@@ -77,12 +76,12 @@ export function App() {
       ]);
       setComments(cmtData);
       setHistory(histData);
-    } catch (err: any) {
+    } catch (err) {
       alert(err.message);
     }
   }
 
-  async function handleAuth(e: React.FormEvent) {
+  async function handleAuth(e) {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -95,7 +94,7 @@ export function App() {
       }
       localStorage.setItem('token', res.token);
       setUser(res.user);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -109,22 +108,7 @@ export function App() {
     setSelectedTicket(null);
   }
 
-  async function handleDemoLogin(demoEmail: string) {
-    setError('');
-    setLoading(true);
-    localStorage.setItem('force_demo_mode', 'true');
-    try {
-      const res = await api.login(demoEmail, 'password123');
-      localStorage.setItem('token', res.token);
-      setUser(res.user);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCreateTicket(e: React.FormEvent) {
+  async function handleCreateTicket(e) {
     e.preventDefault();
     try {
       setLoading(true);
@@ -134,14 +118,14 @@ export function App() {
       setShowCreateModal(false);
       await loadTickets();
       openTicketDetail(created);
-    } catch (err: any) {
+    } catch (err) {
       alert(err.message);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleStatusChange(ticketId: number, status: 'open' | 'in_progress' | 'resolved') {
+  async function handleStatusChange(ticketId, status) {
     try {
       await api.updateTicketStatus(ticketId, status);
       await loadTickets();
@@ -149,12 +133,12 @@ export function App() {
         const histData = await api.getTicketHistory(ticketId);
         setHistory(histData);
       }
-    } catch (err: any) {
+    } catch (err) {
       alert(err.message);
     }
   }
 
-  async function handlePostComment(e: React.FormEvent) {
+  async function handlePostComment(e) {
     e.preventDefault();
     if (!selectedTicket || !newComment.trim()) return;
     try {
@@ -162,7 +146,7 @@ export function App() {
       setComments(prev => [...prev, posted]);
       setNewComment('');
       setIsInternalNote(false);
-    } catch (err: any) {
+    } catch (err) {
       alert(err.message);
     }
   }
@@ -197,7 +181,7 @@ export function App() {
                 </div>
                 <div className="form-group">
                   <label>Role</label>
-                  <select className="form-control" value={role} onChange={e => setRole(e.target.value as any)}>
+                  <select className="form-control" value={role} onChange={e => setRole(e.target.value)}>
                     <option value="customer">Customer (Requests support)</option>
                     <option value="agent">Support Agent (Auto-assigned tickets)</option>
                     <option value="admin">Admin (Full oversight)</option>
@@ -237,38 +221,6 @@ export function App() {
               {isLoginMode ? 'Register now' : 'Sign In'}
             </button>
           </div>
-
-          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '10px', fontWeight: 600 }}>
-              ⚡ 1-Click Instant Demo (No Backend / Credentials Required)
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
-                onClick={() => handleDemoLogin('customer@demo.com')}
-              >
-                👤 Customer
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
-                onClick={() => handleDemoLogin('agent.priya@demo.com')}
-              >
-                🛠️ Agent
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{ fontSize: '0.75rem', padding: '7px 4px' }}
-                onClick={() => handleDemoLogin('admin@demo.com')}
-              >
-                👑 Admin
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -282,11 +234,6 @@ export function App() {
         <div className="logo">
           <LifeBuoy size={26} />
           SupportDesk
-          {localStorage.getItem('force_demo_mode') === 'true' && (
-            <span style={{ fontSize: '0.7rem', background: '#ecfdf5', color: '#059669', padding: '2px 8px', borderRadius: '12px', marginLeft: '6px', border: '1px solid #a7f3d0' }}>
-              Demo Mode
-            </span>
-          )}
         </div>
         <div className="user-info">
           <div>
