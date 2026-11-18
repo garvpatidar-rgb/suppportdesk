@@ -21,7 +21,7 @@ The system solves critical business bottlenecks for customer-facing organization
 | **Backend** | **Go (Golang 1.26+)**, **Gin-Gonic** | High-performance REST APIs, route grouping, middleware chain. |
 | **Database** | **PostgreSQL (Neon Cloud Serverless)**, **GORM** | Relational data persistence, row-level locking (`SELECT ... FOR UPDATE`), automated schema migrations. |
 | **Auth & Security** | **JWT (golang-jwt/v5)**, **bcrypt**, **CORS** | Stateless authentication, role-based access control (RBAC), password hashing. |
-| **Frontend** | **React 18**, **TypeScript**, **Vite**, **Lucide React** | Reactive UI, customer ticket portal, agent queue drawer, real-time messaging tabs. |
+| **Frontend** | **React 18**, **JavaScript (JSX)**, **Vite**, **Lucide React** | Reactive UI, customer ticket portal, agent queue drawer, real-time messaging tabs. |
 | **Repository** | **GitHub** (`garvpatidar-rgb/suppportdesk`) | Production Git hygiene with `.gitignore` protecting secrets. |
 
 ---

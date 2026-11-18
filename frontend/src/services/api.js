@@ -1,8 +1,6 @@
-import type { AuthResponse, Comment, Ticket, TicketHistory, User } from '../types';
-
 const API_BASE = 'http://localhost:9090/api/v1';
 
-function getHeaders(): HeadersInit {
+function getHeaders() {
   const token = localStorage.getItem('token');
   return {
     'Content-Type': 'application/json',
@@ -12,7 +10,7 @@ function getHeaders(): HeadersInit {
 
 export const api = {
   // Auth
-  async register(name: string, email: string, password: string, role = 'customer', skills = 'Technical'): Promise<AuthResponse> {
+  async register(name, email, password, role = 'customer', skills = 'Technical') {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -23,7 +21,7 @@ export const api = {
     return data;
   },
 
-  async login(email: string, password: string): Promise<AuthResponse> {
+  async login(email, password) {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,7 +32,7 @@ export const api = {
     return data;
   },
 
-  async getMe(): Promise<User> {
+  async getMe() {
     const res = await fetch(`${API_BASE}/auth/me`, {
       headers: getHeaders(),
     });
@@ -44,7 +42,7 @@ export const api = {
   },
 
   // Tickets
-  async listTickets(): Promise<Ticket[]> {
+  async listTickets() {
     const res = await fetch(`${API_BASE}/tickets`, {
       headers: getHeaders(),
     });
@@ -53,7 +51,7 @@ export const api = {
     return data;
   },
 
-  async createTicket(ticket: { subject: string; description: string; category: string; priority: string }): Promise<Ticket> {
+  async createTicket(ticket) {
     const res = await fetch(`${API_BASE}/tickets`, {
       method: 'POST',
       headers: getHeaders(),
@@ -64,7 +62,7 @@ export const api = {
     return data;
   },
 
-  async updateTicketStatus(id: number, status: 'open' | 'in_progress' | 'resolved'): Promise<Ticket> {
+  async updateTicketStatus(id, status) {
     const res = await fetch(`${API_BASE}/tickets/${id}/status`, {
       method: 'PATCH',
       headers: getHeaders(),
@@ -76,7 +74,7 @@ export const api = {
   },
 
   // Comments & Conversations
-  async listComments(ticketId: number): Promise<Comment[]> {
+  async listComments(ticketId) {
     const res = await fetch(`${API_BASE}/tickets/${ticketId}/comments`, {
       headers: getHeaders(),
     });
@@ -85,7 +83,7 @@ export const api = {
     return data;
   },
 
-  async addComment(ticketId: number, body: string, isInternal = false): Promise<Comment> {
+  async addComment(ticketId, body, isInternal = false) {
     const res = await fetch(`${API_BASE}/tickets/${ticketId}/comments`, {
       method: 'POST',
       headers: getHeaders(),
@@ -97,7 +95,7 @@ export const api = {
   },
 
   // Audit Trail History
-  async getTicketHistory(ticketId: number): Promise<TicketHistory[]> {
+  async getTicketHistory(ticketId) {
     const res = await fetch(`${API_BASE}/tickets/${ticketId}/history`, {
       headers: getHeaders(),
     });
